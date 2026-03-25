@@ -4,8 +4,8 @@ import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/fireb
 // Importando a biblioteca da IA do Google via CDN
 import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-// AQUI você vai colar a chave que pegar no AI Studio
-const API_KEY_IA = "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU"; 
+ // Em vez de colar a chave aqui, usaremos uma variável de ambiente
+const API_KEY_IA = import.meta.env.VITE_GEMINI_KEY || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
 
 const genAI = new GoogleGenerativeAI(API_KEY_IA);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
