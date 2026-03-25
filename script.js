@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai@0.1.0";
 
+// Configuração do seu Firebase
 const firebaseConfig = {
     apiKey: "AIzaSyDH0szcDymOoxVCue8rMTdiv78pTNOPa6s",
     authDomain: "analises-jb.firebaseapp.com",
@@ -16,17 +17,23 @@ const db = getFirestore(app);
 const genAI = new GoogleGenerativeAI("AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU");
 const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// FUNÇÃO QUE GARANTE O FORMATO AAAA-MM-DD
-function formatarParaID(texto) {
+// FUNÇÃO PARA LIMPAR E VALIDAR DATAS (Evita 2024-09-46022)
+function extrairData(texto) {
     if (!texto) return null;
     let s = String(texto).toLowerCase().trim();
     
-    // Pega apenas os números (ex: de "2-set" pega "2")
-    const numeros = s.match(/\d+/);
-    if (!numeros) return null;
+    // Procura por números no texto (ex: "2-set" -> 2)
+    const match = s.match(/(\d+)/);
+    if (!match) return null;
     
-    const dia = numeros[0].padStart(2, '0');
-    let mes = "09"; // Setembro por padrão
+    const diaNum = parseInt(match[0]);
+
+    // TRAVA DE SEGURANÇA: Só aceita dias entre 1 e 31
+    // Ignora números longos que são resultados do jogo (ex: 4017)
+    if (diaNum < 1 || diaNum > 31 || match[0].length > 2) return null;
+    
+    const dia = String(diaNum).padStart(2, '0');
+    let mes = "09"; // Setembro padrão para a sua planilha atual
     if (s.includes("out")) mes = "10";
     if (s.includes("nov")) mes = "11";
     if (s.includes("dez")) mes = "12";
@@ -50,21 +57,23 @@ document.getElementById('btnImportar').addEventListener('click', () => {
             let mapaColunas = {};
             let horarioAtual = "";
 
-            // 1. Identifica as datas nas primeiras linhas
+            // 1. Identifica as colunas de data (Varrendo as primeiras 10 linhas para segurança)
             for (let r = 0; r < 10; r++) {
                 if (!matriz[r]) continue;
                 matriz[r].forEach((celula, cIdx) => {
-                    const idData = formatarParaID(celula);
+                    const idData = extrairData(celula);
                     if (idData && !mapaColunas[cIdx]) {
                         mapaColunas[cIdx] = idData;
-                        console.log(`Coluna ${cIdx} detectada como data: ${idData}`);
+                        console.log(`Coluna ${cIdx} detectada como data válida: ${idData}`);
                     }
                 });
             }
 
-            // 2. Varre os prêmios
+            // 2. Varre os prêmios por blocos de horários
             matriz.forEach(linha => {
                 const primeira = String(linha[0] || "").toLowerCase();
+                
+                // Define o horário atual conforme encontra as marcações na primeira coluna
                 if (primeira.includes("9h")) horarioAtual = "9hs";
                 else if (primeira.includes("11h")) horarioAtual = "11hs";
                 else if (primeira.includes("14h")) horarioAtual = "14hs";
@@ -72,6 +81,7 @@ document.getElementById('btnImportar').addEventListener('click', () => {
                 else if (primeira.includes("18h")) horarioAtual = "18hs";
                 else if (primeira.includes("21h")) horarioAtual = "21hs";
 
+                // Se a linha for o 1° Prêmio, salva os valores nas colunas correspondentes
                 if ((primeira.startsWith("1") || primeira.includes("1°")) && horarioAtual) {
                     linha.forEach((valor, cIdx) => {
                         const dataID = mapaColunas[cIdx];
@@ -83,7 +93,10 @@ document.getElementById('btnImportar').addEventListener('click', () => {
                 }
             });
 
-            // 3. Salva no Banco
+            // 3. Gravação no Firebase
+            const statusLabel = document.getElementById('status');
+            statusLabel.innerText = "⏳ Atualizando banco de dados...";
+
             for (const id in resultadosPorData) {
                 await setDoc(doc(db, "resultados_jb", id), {
                     ...resultadosPorData[id],
@@ -91,34 +104,48 @@ document.getElementById('btnImportar').addEventListener('click', () => {
                 });
             }
 
-            document.getElementById('status').innerText = "✅ Banco de Dados Atualizado!";
-            alert("Sucesso! Agora busque por 02/09/2024.");
+            statusLabel.innerText = "✅ Importação Concluída!";
+            alert("Dados de Setembro carregados com sucesso!");
 
         } catch (err) {
-            console.error(err);
-            alert("Erro: " + err.message);
+            console.error("Erro no processamento:", err);
+            alert("Erro ao ler planilha: " + err.message);
         }
     };
     reader.readAsArrayBuffer(file);
 });
 
-// BUSCA (IGUAL AO FORMATO DO CALENDÁRIO)
+// FUNÇÃO DE BUSCA E EXIBIÇÃO
 document.getElementById('btnFiltrar').addEventListener('click', async () => {
-    const dataBusca = document.getElementById('filtroData').value; // Vem como "2024-09-02"
+    const dataBusca = document.getElementById('filtroData').value; 
     const grid = document.getElementById('gridResultados');
-    grid.innerHTML = "Buscando...";
+    
+    if (!dataBusca) return alert("Selecione uma data no calendário!");
+    
+    grid.innerHTML = "<div class='col-span-full text-center'>Buscando resultados...</div>";
 
-    const docSnap = await getDoc(doc(db, "resultados_jb", dataBusca));
-    if (docSnap.exists()) {
-        const d = docSnap.data();
-        const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
-        grid.innerHTML = horas.map(h => `
-            <div class="bg-white p-4 rounded-xl border-2 border-blue-500 shadow-lg text-center">
-                <span class="text-xs font-bold text-blue-600 uppercase">${h}</span>
-                <p class="text-3xl font-black text-slate-800">${d[h] || '---'}</p>
-            </div>
-        `).join('');
-    } else {
-        grid.innerHTML = `<div class="col-span-full p-4 bg-red-100 text-red-700 rounded-lg">Não encontramos nada para ${dataBusca} no banco de dados.</div>`;
+    try {
+        const docSnap = await getDoc(doc(db, "resultados_jb", dataBusca));
+        
+        if (docSnap.exists()) {
+            const d = docSnap.data();
+            const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
+            
+            grid.innerHTML = horas.map(h => `
+                <div class="bg-white p-4 rounded-xl border-2 border-blue-500 shadow-lg text-center transform hover:scale-105 transition-all">
+                    <span class="text-xs font-bold text-blue-600 uppercase tracking-widest">${h}</span>
+                    <p class="text-3xl font-black text-slate-800 mt-1">${d[h] || '---'}</p>
+                </div>
+            `).join('');
+        } else {
+            grid.innerHTML = `
+                <div class="col-span-full p-6 bg-red-50 text-red-700 rounded-xl border border-red-200 text-center">
+                    <p class="font-bold">Ops! Nenhum dado para ${dataBusca}.</p>
+                    <p class="text-sm">Verifique se você importou a planilha correta.</p>
+                </div>
+            `;
+        }
+    } catch (e) {
+        grid.innerHTML = "<div class='col-span-full text-red-500'>Erro ao conectar com o banco de dados.</div>";
     }
 });
