@@ -1,33 +1,42 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-// 1. CONFIGURAÇÃO DA IA (GEMINI)
+// 1. IMPORTAÇÃO DA IA COM VERSÃO ESPECÍFICA (Para evitar o erro 404)
+import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai@0.3.0";
+
+// 2. CONFIGURAÇÃO DA IA (GEMINI)
 const API_KEY_IA = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_KEY) 
     || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
 
 const genAI = new GoogleGenerativeAI(API_KEY_IA);
+// Usando o modelo '-latest' para garantir compatibilidade
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-// Função Única para análise da IA
+// Função de análise da IA
 async function analisarComIA(dadosDosResultados) {
     try {
-        const prompt = `Analise estes resultados do jogo do bicho de 01/09/2024: ${JSON.stringify(dadosDosResultados)}. 
-                        Quais são as tendências para os próximos sorteios?`;
+        console.log("Iniciando análise com a IA...");
+        const prompt = `Analise estes resultados do jogo do bicho: ${JSON.stringify(dadosDosResultados)}. 
+                        Com base nos milhares sorteados, quais são as tendências e bichos prováveis para os próximos sorteios?`;
         
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        console.log("Análise da IA:", response.text());
+        const textoAnalise = response.text();
         
+        console.log("✅ Análise da IA concluída:", textoAnalise);
+        
+        // Exibe no campo de análise se ele existir no seu HTML
         const campoAnalise = document.getElementById('campo-analise');
-        if (campoAnalise) campoAnalise.innerText = response.text();
+        if (campoAnalise) {
+            campoAnalise.innerText = textoAnalise;
+        }
         
     } catch (error) {
-        console.error("Erro na análise da IA:", error);
+        console.error("❌ Erro na análise da IA:", error);
     }
 }
 
-// 2. CONFIGURAÇÃO DO FIREBASE (COLE SUAS CHAVES REAIS AQUI)
+// 3. CONFIGURAÇÃO DO FIREBASE (Substitua pelos seus dados reais do Console Firebase)
 const firebaseConfig = {
   apiKey: "AIzaSyDH0szcDymOoxVCue8rMTdiv78pTNOPa6s",
   authDomain: "analises-jb.firebaseapp.com",
@@ -41,7 +50,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 3. REFERÊNCIAS DO DOM
+// 4. REFERÊNCIAS DO DOM
 const inputExcel = document.getElementById('inputExcel');
 const btnImportar = document.getElementById('btnImportar');
 const status = document.getElementById('status');
@@ -49,11 +58,11 @@ const gridResultados = document.getElementById('gridResultados');
 const filtroData = document.getElementById('filtroData');
 const btnFiltrar = document.getElementById('btnFiltrar');
 
-// 4. FUNÇÃO PARA LER EXCEL E SALVAR
+// 5. FUNÇÃO PARA LER EXCEL E SALVAR NO BANCO
 btnImportar.addEventListener('click', () => {
     const file = inputExcel.files[0];
     if (!file) {
-        alert("Por favor, selecione um arquivo primeiro!");
+        alert("Por favor, selecione um arquivo Excel primeiro!");
         return;
     }
 
@@ -64,16 +73,19 @@ btnImportar.addEventListener('click', () => {
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Converte para JSON considerando os cabeçalhos
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-            status.innerText = "⏳ Processando dados...";
+            status.innerText = "⏳ Processando e salvando dados...";
             
             for (const row of jsonData) {
-                // Tenta pegar a data da planilha ou do campo de data
+                // Identifica a data na planilha (Data, data ou o valor do filtro)
                 const dataDoc = row.data || row.Data || filtroData.value; 
 
                 if (!dataDoc) continue;
 
+                // Salva no Firestore mapeando as colunas da sua planilha de 01/09
                 await setDoc(doc(db, "resultados_jb", dataDoc), {
                     "9hs": row["9hs"] || row["9h"] || row["__EMPTY_1"] || "",
                     "11hs": row["11hs"] || row["11h"] || row["__EMPTY_2"] || "",
@@ -88,11 +100,11 @@ btnImportar.addEventListener('click', () => {
             status.className = "mt-4 text-sm font-medium text-green-600";
             status.innerText = "✅ Dados importados com sucesso!";
             
-            // Chama a IA após importar
+            // Dispara a análise da IA após o sucesso da importação
             analisarComIA(jsonData);
 
         } catch (error) {
-            console.error(error);
+            console.error("Erro no processamento:", error);
             status.className = "mt-4 text-sm font-medium text-red-600";
             status.innerText = "❌ Erro ao processar arquivo ou salvar no Firebase.";
         }
@@ -100,15 +112,15 @@ btnImportar.addEventListener('click', () => {
     reader.readAsArrayBuffer(file);
 });
 
-// 5. FUNÇÃO PARA BUSCAR RESULTADOS
+// 6. FUNÇÃO PARA BUSCAR E EXIBIR OS RESULTADOS SALVOS
 async function buscarResultados() {
     const dataAlvo = filtroData.value;
     if (!dataAlvo) {
-        alert("Selecione uma data para filtrar!");
+        alert("Selecione uma data para buscar!");
         return;
     }
 
-    gridResultados.innerHTML = "<p class='text-slate-400'>Buscando...</p>";
+    gridResultados.innerHTML = "<p class='text-slate-400'>Buscando resultados...</p>";
 
     try {
         const docRef = doc(db, "resultados_jb", dataAlvo);
@@ -125,11 +137,11 @@ async function buscarResultados() {
                 </div>
             `).join('');
         } else {
-            gridResultados.innerHTML = "<p class='col-span-full text-center text-slate-500'>Nenhum resultado para esta data.</p>";
+            gridResultados.innerHTML = "<p class='col-span-full text-center text-slate-500'>Nenhum resultado encontrado para esta data.</p>";
         }
     } catch (error) {
         console.error(error);
-        gridResultados.innerHTML = "<p class='text-red-500'>Erro ao carregar dados.</p>";
+        gridResultados.innerHTML = "<p class='text-red-500'>Erro ao carregar dados do banco.</p>";
     }
 }
 
