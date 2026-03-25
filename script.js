@@ -16,15 +16,19 @@ const db = getFirestore(app);
 const genAI = new GoogleGenerativeAI("AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU");
 const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// FUNÇÃO PARA CONVERTER "2-set" EM "2024-09-02"
-function formatarDataPlanilha(texto) {
-    if (!texto || typeof texto !== 'string') return null;
-    const partes = texto.toLowerCase().split('-');
-    if (partes.length < 2) return null;
-
-    const dia = partes[0].padStart(2, '0');
-    const meses = { 'set': '09', 'out': '10', 'nov': '11', 'dez': '12' };
-    const mes = meses[partes[1]] || '09';
+// FUNÇÃO PARA CONVERTER DATAS (Ex: "2-set", "02/09", "2-setembro")
+function normalizarData(texto) {
+    if (!texto) return null;
+    const s = String(texto).toLowerCase().trim();
+    const diaMatch = s.match(/(\d+)/); // Pega o número do dia
+    if (!diaMatch) return null;
+    
+    const dia = diaMatch[0].padStart(2, '0');
+    let mes = "09"; // Padrão Setembro
+    if (s.includes("out")) mes = "10";
+    if (s.includes("nov")) mes = "11";
+    if (s.includes("dez")) mes = "12";
+    
     return `2024-${mes}-${dia}`;
 }
 
@@ -34,76 +38,89 @@ document.getElementById('btnImportar').addEventListener('click', () => {
 
     const reader = new FileReader();
     reader.onload = async (e) => {
-        const data = new Uint8Array(e.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        
-        // Lendo como matriz (array de arrays) para navegar nas colunas
-        const matriz = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-        const resultadosPorData = {};
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const matriz = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-        // 1. Identificar as datas nas colunas (Linha 0 da planilha)
-        const cabecalho = matriz[0]; 
-        
-        // 2. Percorrer a matriz para extrair os dados
-        // Vamos procurar os blocos de 9hs, 11hs, etc.
-        let horarioAtual = "";
+            const resultadosPorData = {};
+            let horarioAtual = "";
 
-        matriz.forEach((linha) => {
-            const primeiraCelula = String(linha[0] || "").toLowerCase();
-            
-            if (primeiraCelula.includes("9hs")) horarioAtual = "9hs";
-            else if (primeiraCelula.includes("11hs")) horarioAtual = "11hs";
-            else if (primeiraCelula.includes("14hs")) horarioAtual = "14hs";
-            else if (primeiraCelula.includes("16hs")) horarioAtual = "16hs";
-            else if (primeiraCelula.includes("18hs")) horarioAtual = "18hs";
-            else if (primeiraCelula.includes("21hs")) horarioAtual = "21hs";
+            // O segredo: Percorrer linha por linha da planilha
+            matriz.forEach((linha, indexLinha) => {
+                const primeiraColuna = String(linha[0] || "").toLowerCase();
 
-            // Se for uma linha de resultado (começa com 1°)
-            if (primeiraCelula === "1°") {
-                for (let col = 1; col < linha.length; col++) {
-                    const dataFormatada = formatarDataPlanilha(cabecalho[col]);
-                    if (dataFormatada && horarioAtual) {
-                        if (!resultadosPorData[dataFormatada]) resultadosPorData[dataFormatada] = {};
-                        resultadosPorData[dataFormatada][horarioAtual] = linha[col];
-                    }
+                // Detecta qual horário estamos lendo no momento
+                if (primeiraColuna.includes("9h")) horarioAtual = "9hs";
+                else if (primeiraColuna.includes("11h")) horarioAtual = "11hs";
+                else if (primeiraColuna.includes("14h")) horarioAtual = "14hs";
+                else if (primeiraColuna.includes("16h")) horarioAtual = "16hs";
+                else if (primeiraColuna.includes("18h")) horarioAtual = "18hs";
+                else if (primeiraColuna.includes("21h")) horarioAtual = "21hs";
+
+                // Se a linha começar com "1°" ou "1", é o resultado que queremos!
+                if (primeiraColuna.startsWith("1") && horarioAtual) {
+                    // Percorre as colunas dessa linha (as datas)
+                    linha.forEach((celula, indexCol) => {
+                        if (indexCol === 0) return; // Pula a primeira coluna (que é o "1°")
+                        
+                        // Busca a data lá no topo da planilha (Linha 0 ou 1)
+                        const rawData = matriz[0][indexCol] || matriz[1][indexCol];
+                        const dataKey = normalizarData(rawData);
+
+                        if (dataKey && celula) {
+                            if (!resultadosPorData[dataKey]) resultadosPorData[dataKey] = {};
+                            resultadosPorData[dataKey][horarioAtual] = String(celula).trim();
+                        }
+                    });
                 }
-            }
-        });
-
-        // 3. Salvar no Firebase
-        document.getElementById('status').innerText = "⏳ Salvando múltiplas datas...";
-        for (const dataKey in resultadosPorData) {
-            await setDoc(doc(db, "resultados_jb", dataKey), {
-                ...resultadosPorData[dataKey],
-                atualizadoEm: new Date().toISOString()
             });
-        }
 
-        document.getElementById('status').innerText = "✅ Todas as datas importadas!";
-        alert("Planilha processada com sucesso!");
+            console.log("Dados extraídos:", resultadosPorData);
+
+            // Gravação no Firebase
+            document.getElementById('status').innerText = "⏳ Salvando no banco...";
+            for (const dataKey in resultadosPorData) {
+                await setDoc(doc(db, "resultados_jb", dataKey), {
+                    ...resultadosPorData[dataKey],
+                    atualizadoEm: new Date().toISOString()
+                });
+            }
+
+            document.getElementById('status').innerText = "✅ Importado com sucesso!";
+            alert("Dados de Setembro carregados!");
+
+        } catch (err) {
+            console.error(err);
+            alert("Erro ao ler planilha: " + err.message);
+        }
     };
     reader.readAsArrayBuffer(file);
 });
 
-// A função buscarResultados e analisarComIA continuam iguais às anteriores
+// A BUSCA (Igual antes, mas garantindo o campo de texto)
 async function buscarResultados() {
     const dataAlvo = document.getElementById('filtroData').value;
     const grid = document.getElementById('gridResultados');
-    grid.innerHTML = "Buscando...";
+    grid.innerHTML = "<div class='col-span-full text-center'>Buscando...</div>";
 
-    const docSnap = await getDoc(doc(db, "resultados_jb", dataAlvo));
-    if (docSnap.exists()) {
-        const d = docSnap.data();
-        const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
-        grid.innerHTML = horas.map(h => `
-            <div class="bg-white p-4 rounded-xl border border-blue-100 shadow-sm text-center">
-                <span class="text-xs font-bold text-blue-600 uppercase">${h}</span>
-                <p class="text-2xl font-black text-slate-800">${d[h] || '---'}</p>
-            </div>
-        `).join('');
-    } else {
-        grid.innerHTML = "<p class='col-span-full'>Nenhum dado para " + dataAlvo + "</p>";
+    try {
+        const docSnap = await getDoc(doc(db, "resultados_jb", dataAlvo));
+        if (docSnap.exists()) {
+            const d = docSnap.data();
+            const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
+            grid.innerHTML = horas.map(h => `
+                <div class="bg-white p-4 rounded-xl border-2 border-blue-50 shadow-md text-center">
+                    <span class="text-xs font-bold text-blue-500 uppercase">${h}</span>
+                    <p class="text-3xl font-black text-slate-800">${d[h] || '---'}</p>
+                </div>
+            `).join('');
+        } else {
+            grid.innerHTML = `<div class='col-span-full text-center p-8 bg-slate-100 rounded-xl'>Nenhum dado salvo para ${dataAlvo}. Tente importar a planilha de novo.</div>`;
+        }
+    } catch (e) {
+        grid.innerHTML = "Erro na conexão.";
     }
 }
 document.getElementById('btnFiltrar').addEventListener('click', buscarResultados);
