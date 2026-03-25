@@ -2,14 +2,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebas
 import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 // 1. IMPORTAÇÃO DA IA COM VERSÃO ESPECÍFICA (Para evitar o erro 404)
-import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai@0.3.0";
+import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai@0.1.1";
 
 // 2. CONFIGURAÇÃO DA IA (GEMINI)
 const API_KEY_IA = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_KEY) 
     || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
 
 const genAI = new GoogleGenerativeAI(API_KEY_IA);
-const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-1.5-flash",
+}, { apiVersion: 'v1beta' }); // <--- Isso força a versão correta do AI Studio
 
 // Função de análise da IA com integração visual
 async function analisarComIA(dadosDosResultados) {
