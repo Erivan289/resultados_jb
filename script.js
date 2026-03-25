@@ -5,7 +5,30 @@ import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/fireb
 import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
  // Em vez de colar a chave aqui, usaremos uma variável de ambiente
-const API_KEY_IA = import.meta.env.VITE_GEMINI_KEY || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
+// Linha 8 corrigida para não travar o botão "Processar"
+const API_KEY_IA = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_KEY) 
+    || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
+
+// Configuração da IA (Google Gemini)
+const genAI = new GoogleGenerativeAI(API_KEY_IA);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+// Função para pedir análise da IA sobre os resultados
+async function analisarComIA(dadosDosResultados) {
+    try {
+        const prompt = `Analise estes resultados do jogo de 01/09/2024: ${JSON.stringify(dadosDosResultados)}. Quais são as tendências para os próximos sorteios?`;
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        console.log("Análise da IA:", response.text());
+        
+        // Se você tiver um campo de texto no HTML para exibir a análise:
+        // document.getElementById('campo-analise').innerText = response.text();
+        
+    } catch (error) {
+        console.error("Erro na análise da IA:", error);
+    }
+}
 
 const genAI = new GoogleGenerativeAI(API_KEY_IA);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
