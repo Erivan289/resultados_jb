@@ -9,34 +9,39 @@ const API_KEY_IA = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_
     || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
 
 const genAI = new GoogleGenerativeAI(API_KEY_IA);
-// Usando o modelo '-latest' para garantir compatibilidade
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
-// Função de análise da IA
+// Função de análise da IA com integração visual
 async function analisarComIA(dadosDosResultados) {
+    const campoAnalise = document.getElementById('campo-analise');
+    const containerAnalise = document.getElementById('container-analise');
+
     try {
         console.log("Iniciando análise com a IA...");
+        if (containerAnalise) containerAnalise.classList.remove('hidden');
+        if (campoAnalise) campoAnalise.innerText = "Pensando nas tendências... 🎲";
+
         const prompt = `Analise estes resultados do jogo do bicho: ${JSON.stringify(dadosDosResultados)}. 
-                        Com base nos milhares sorteados, quais são as tendências e bichos prováveis para os próximos sorteios?`;
+                        Com base nos milhares sorteados, quais são as tendências e bichos prováveis para os próximos sorteios? Responda de forma clara.`;
         
         const result = await model.generateContent(prompt);
         const response = await result.response;
         const textoAnalise = response.text();
         
-        console.log("✅ Análise da IA concluída:", textoAnalise);
+        console.log("✅ Análise da IA concluída");
         
-        // Exibe no campo de análise se ele existir no seu HTML
-        const campoAnalise = document.getElementById('campo-analise');
+        // Exibe no painel do HTML
         if (campoAnalise) {
-            campoAnalise.innerText = textoAnalise;
+            campoAnalise.innerHTML = textoAnalise.replace(/\n/g, '<br>');
         }
         
     } catch (error) {
         console.error("❌ Erro na análise da IA:", error);
+        if (campoAnalise) campoAnalise.innerText = "Não foi possível gerar a análise agora. Verifique o console.";
     }
 }
 
-// 3. CONFIGURAÇÃO DO FIREBASE (Substitua pelos seus dados reais do Console Firebase)
+// 3. CONFIGURAÇÃO DO FIREBASE (Suas chaves reais do projeto analises-jb)
 const firebaseConfig = {
   apiKey: "AIzaSyDH0szcDymOoxVCue8rMTdiv78pTNOPa6s",
   authDomain: "analises-jb.firebaseapp.com",
@@ -73,19 +78,15 @@ btnImportar.addEventListener('click', () => {
             const workbook = XLSX.read(data, { type: 'array' });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-            
-            // Converte para JSON considerando os cabeçalhos
             const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
             status.innerText = "⏳ Processando e salvando dados...";
             
             for (const row of jsonData) {
-                // Identifica a data na planilha (Data, data ou o valor do filtro)
                 const dataDoc = row.data || row.Data || filtroData.value; 
 
                 if (!dataDoc) continue;
 
-                // Salva no Firestore mapeando as colunas da sua planilha de 01/09
                 await setDoc(doc(db, "resultados_jb", dataDoc), {
                     "9hs": row["9hs"] || row["9h"] || row["__EMPTY_1"] || "",
                     "11hs": row["11hs"] || row["11h"] || row["__EMPTY_2"] || "",
@@ -100,13 +101,13 @@ btnImportar.addEventListener('click', () => {
             status.className = "mt-4 text-sm font-medium text-green-600";
             status.innerText = "✅ Dados importados com sucesso!";
             
-            // Dispara a análise da IA após o sucesso da importação
+            // Dispara a IA
             analisarComIA(jsonData);
 
         } catch (error) {
             console.error("Erro no processamento:", error);
             status.className = "mt-4 text-sm font-medium text-red-600";
-            status.innerText = "❌ Erro ao processar arquivo ou salvar no Firebase.";
+            status.innerText = "❌ Erro ao salvar no Firebase.";
         }
     };
     reader.readAsArrayBuffer(file);
