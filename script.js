@@ -16,15 +16,17 @@ const db = getFirestore(app);
 const genAI = new GoogleGenerativeAI("AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU");
 const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// Função para converter "2-set" ou "2seg" em "2024-09-02"
-function extrairData(texto) {
+// FUNÇÃO QUE GARANTE O FORMATO AAAA-MM-DD
+function formatarParaID(texto) {
     if (!texto) return null;
-    const s = String(texto).toLowerCase();
-    const match = s.match(/(\d+)/); // Pega o primeiro número (o dia)
-    if (!match) return null;
+    let s = String(texto).toLowerCase().trim();
     
-    const dia = match[0].padStart(2, '0');
-    let mes = "09"; // Padrão Setembro
+    // Pega apenas os números (ex: de "2-set" pega "2")
+    const numeros = s.match(/\d+/);
+    if (!numeros) return null;
+    
+    const dia = numeros[0].padStart(2, '0');
+    let mes = "09"; // Setembro por padrão
     if (s.includes("out")) mes = "10";
     if (s.includes("nov")) mes = "11";
     if (s.includes("dez")) mes = "12";
@@ -44,84 +46,79 @@ document.getElementById('btnImportar').addEventListener('click', () => {
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const matriz = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
-            const resultadosPorData = {};
-            let mapaColunasDatas = {}; // Guarda qual coluna é qual dia
+            let resultadosPorData = {};
+            let mapaColunas = {};
             let horarioAtual = "";
 
-            // PASSO 1: Descobrir em quais colunas estão as datas (Varrendo as primeiras 5 linhas)
-            for (let i = 0; i < 5; i++) {
-                if (!matriz[i]) continue;
-                matriz[i].forEach((celula, colIdx) => {
-                    const dataFormatada = extrairData(celula);
-                    if (dataFormatada && !mapaColunasDatas[colIdx]) {
-                        mapaColunasDatas[colIdx] = dataFormatada;
+            // 1. Identifica as datas nas primeiras linhas
+            for (let r = 0; r < 10; r++) {
+                if (!matriz[r]) continue;
+                matriz[r].forEach((celula, cIdx) => {
+                    const idData = formatarParaID(celula);
+                    if (idData && !mapaColunas[cIdx]) {
+                        mapaColunas[cIdx] = idData;
+                        console.log(`Coluna ${cIdx} detectada como data: ${idData}`);
                     }
                 });
             }
 
-            // PASSO 2: Varrer a planilha atrás dos horários e prêmios
-            matriz.forEach((linha) => {
-                const primeiraCel = String(linha[0] || "").toLowerCase();
+            // 2. Varre os prêmios
+            matriz.forEach(linha => {
+                const primeira = String(linha[0] || "").toLowerCase();
+                if (primeira.includes("9h")) horarioAtual = "9hs";
+                else if (primeira.includes("11h")) horarioAtual = "11hs";
+                else if (primeira.includes("14h")) horarioAtual = "14hs";
+                else if (primeira.includes("16h")) horarioAtual = "16hs";
+                else if (primeira.includes("18h")) horarioAtual = "18hs";
+                else if (primeira.includes("21h")) horarioAtual = "21hs";
 
-                if (primeiraCel.includes("9h")) horarioAtual = "9hs";
-                else if (primeiraCel.includes("11h")) horarioAtual = "11hs";
-                else if (primeiraCel.includes("14h")) horarioAtual = "14hs";
-                else if (primeiraCel.includes("16h")) horarioAtual = "16hs";
-                else if (primeiraCel.includes("18h")) horarioAtual = "18hs";
-                else if (primeiraCel.includes("21h")) horarioAtual = "21hs";
-
-                // Se a linha é de resultado (começa com "1°" ou "1")
-                if (primeiraCel.startsWith("1") && horarioAtual) {
-                    linha.forEach((valor, colIdx) => {
-                        const dataDaColuna = mapaColunasDatas[colIdx];
-                        if (dataDaColuna && valor && colIdx > 0) {
-                            if (!resultadosPorData[dataDaColuna]) resultadosPorData[dataDaColuna] = {};
-                            resultadosPorData[dataDaColuna][horarioAtual] = String(valor).trim();
+                if ((primeira.startsWith("1") || primeira.includes("1°")) && horarioAtual) {
+                    linha.forEach((valor, cIdx) => {
+                        const dataID = mapaColunas[cIdx];
+                        if (dataID && valor && cIdx > 0) {
+                            if (!resultadosPorData[dataID]) resultadosPorData[dataID] = {};
+                            resultadosPorData[dataID][horarioAtual] = String(valor).trim();
                         }
                     });
                 }
             });
 
-            // PASSO 3: Salvar no Firebase
-            const status = document.getElementById('status');
-            status.innerText = "⏳ Gravando dados de Setembro...";
-            
-            for (const dataKey in resultadosPorData) {
-                await setDoc(doc(db, "resultados_jb", dataKey), {
-                    ...resultadosPorData[dataKey],
+            // 3. Salva no Banco
+            for (const id in resultadosPorData) {
+                await setDoc(doc(db, "resultados_jb", id), {
+                    ...resultadosPorData[id],
                     atualizadoEm: new Date().toISOString()
                 });
             }
 
-            status.innerText = "✅ Importado com sucesso!";
-            alert("Sucesso! Verifique os dias 02, 03, 04 de Setembro.");
+            document.getElementById('status').innerText = "✅ Banco de Dados Atualizado!";
+            alert("Sucesso! Agora busque por 02/09/2024.");
 
         } catch (err) {
             console.error(err);
-            alert("Erro ao processar: " + err.message);
+            alert("Erro: " + err.message);
         }
     };
     reader.readAsArrayBuffer(file);
 });
 
-// A função de busca permanece a mesma (btnFiltrar)
-async function buscarResultados() {
-    const dataAlvo = document.getElementById('filtroData').value;
+// BUSCA (IGUAL AO FORMATO DO CALENDÁRIO)
+document.getElementById('btnFiltrar').addEventListener('click', async () => {
+    const dataBusca = document.getElementById('filtroData').value; // Vem como "2024-09-02"
     const grid = document.getElementById('gridResultados');
     grid.innerHTML = "Buscando...";
 
-    const docSnap = await getDoc(doc(db, "resultados_jb", dataAlvo));
+    const docSnap = await getDoc(doc(db, "resultados_jb", dataBusca));
     if (docSnap.exists()) {
         const d = docSnap.data();
         const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
         grid.innerHTML = horas.map(h => `
-            <div class="bg-white p-4 rounded-xl border-2 border-blue-100 shadow-sm text-center">
+            <div class="bg-white p-4 rounded-xl border-2 border-blue-500 shadow-lg text-center">
                 <span class="text-xs font-bold text-blue-600 uppercase">${h}</span>
-                <p class="text-2xl font-black text-slate-800">${d[h] || '---'}</p>
+                <p class="text-3xl font-black text-slate-800">${d[h] || '---'}</p>
             </div>
         `).join('');
     } else {
-        grid.innerHTML = `<div class="col-span-full text-center p-4 bg-yellow-50 text-yellow-700 rounded-lg">Nenhum dado salvo para ${dataAlvo}.</div>`;
+        grid.innerHTML = `<div class="col-span-full p-4 bg-red-100 text-red-700 rounded-lg">Não encontramos nada para ${dataBusca} no banco de dados.</div>`;
     }
-}
-document.getElementById('btnFiltrar').addEventListener('click', buscarResultados);
+});
