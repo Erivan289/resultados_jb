@@ -7,7 +7,7 @@ const API_KEY_IA = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_
     || "AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU";
 
 const genAI = new GoogleGenerativeAI(API_KEY_IA);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
 // Função Única para análise da IA
 async function analisarComIA(dadosDosResultados) {
