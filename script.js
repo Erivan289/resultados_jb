@@ -16,14 +16,14 @@ const db = getFirestore(app);
 const genAI = new GoogleGenerativeAI("AIzaSyBoXxJigJgxRytRuERGYGygVYY0Vv-g9tU");
 const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-// FUNÇÃO PARA CONVERTER DATAS (Ex: "2-set", "02/09", "2-setembro")
-function normalizarData(texto) {
+// Função para converter "2-set" ou "2seg" em "2024-09-02"
+function extrairData(texto) {
     if (!texto) return null;
-    const s = String(texto).toLowerCase().trim();
-    const diaMatch = s.match(/(\d+)/); // Pega o número do dia
-    if (!diaMatch) return null;
+    const s = String(texto).toLowerCase();
+    const match = s.match(/(\d+)/); // Pega o primeiro número (o dia)
+    if (!match) return null;
     
-    const dia = diaMatch[0].padStart(2, '0');
+    const dia = match[0].padStart(2, '0');
     let mes = "09"; // Padrão Setembro
     if (s.includes("out")) mes = "10";
     if (s.includes("nov")) mes = "11";
@@ -45,42 +45,47 @@ document.getElementById('btnImportar').addEventListener('click', () => {
             const matriz = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
             const resultadosPorData = {};
+            let mapaColunasDatas = {}; // Guarda qual coluna é qual dia
             let horarioAtual = "";
 
-            // O segredo: Percorrer linha por linha da planilha
-            matriz.forEach((linha, indexLinha) => {
-                const primeiraColuna = String(linha[0] || "").toLowerCase();
+            // PASSO 1: Descobrir em quais colunas estão as datas (Varrendo as primeiras 5 linhas)
+            for (let i = 0; i < 5; i++) {
+                if (!matriz[i]) continue;
+                matriz[i].forEach((celula, colIdx) => {
+                    const dataFormatada = extrairData(celula);
+                    if (dataFormatada && !mapaColunasDatas[colIdx]) {
+                        mapaColunasDatas[colIdx] = dataFormatada;
+                    }
+                });
+            }
 
-                // Detecta qual horário estamos lendo no momento
-                if (primeiraColuna.includes("9h")) horarioAtual = "9hs";
-                else if (primeiraColuna.includes("11h")) horarioAtual = "11hs";
-                else if (primeiraColuna.includes("14h")) horarioAtual = "14hs";
-                else if (primeiraColuna.includes("16h")) horarioAtual = "16hs";
-                else if (primeiraColuna.includes("18h")) horarioAtual = "18hs";
-                else if (primeiraColuna.includes("21h")) horarioAtual = "21hs";
+            // PASSO 2: Varrer a planilha atrás dos horários e prêmios
+            matriz.forEach((linha) => {
+                const primeiraCel = String(linha[0] || "").toLowerCase();
 
-                // Se a linha começar com "1°" ou "1", é o resultado que queremos!
-                if (primeiraColuna.startsWith("1") && horarioAtual) {
-                    // Percorre as colunas dessa linha (as datas)
-                    linha.forEach((celula, indexCol) => {
-                        if (indexCol === 0) return; // Pula a primeira coluna (que é o "1°")
-                        
-                        // Busca a data lá no topo da planilha (Linha 0 ou 1)
-                        const rawData = matriz[0][indexCol] || matriz[1][indexCol];
-                        const dataKey = normalizarData(rawData);
+                if (primeiraCel.includes("9h")) horarioAtual = "9hs";
+                else if (primeiraCel.includes("11h")) horarioAtual = "11hs";
+                else if (primeiraCel.includes("14h")) horarioAtual = "14hs";
+                else if (primeiraCel.includes("16h")) horarioAtual = "16hs";
+                else if (primeiraCel.includes("18h")) horarioAtual = "18hs";
+                else if (primeiraCel.includes("21h")) horarioAtual = "21hs";
 
-                        if (dataKey && celula) {
-                            if (!resultadosPorData[dataKey]) resultadosPorData[dataKey] = {};
-                            resultadosPorData[dataKey][horarioAtual] = String(celula).trim();
+                // Se a linha é de resultado (começa com "1°" ou "1")
+                if (primeiraCel.startsWith("1") && horarioAtual) {
+                    linha.forEach((valor, colIdx) => {
+                        const dataDaColuna = mapaColunasDatas[colIdx];
+                        if (dataDaColuna && valor && colIdx > 0) {
+                            if (!resultadosPorData[dataDaColuna]) resultadosPorData[dataDaColuna] = {};
+                            resultadosPorData[dataDaColuna][horarioAtual] = String(valor).trim();
                         }
                     });
                 }
             });
 
-            console.log("Dados extraídos:", resultadosPorData);
-
-            // Gravação no Firebase
-            document.getElementById('status').innerText = "⏳ Salvando no banco...";
+            // PASSO 3: Salvar no Firebase
+            const status = document.getElementById('status');
+            status.innerText = "⏳ Gravando dados de Setembro...";
+            
             for (const dataKey in resultadosPorData) {
                 await setDoc(doc(db, "resultados_jb", dataKey), {
                     ...resultadosPorData[dataKey],
@@ -88,39 +93,35 @@ document.getElementById('btnImportar').addEventListener('click', () => {
                 });
             }
 
-            document.getElementById('status').innerText = "✅ Importado com sucesso!";
-            alert("Dados de Setembro carregados!");
+            status.innerText = "✅ Importado com sucesso!";
+            alert("Sucesso! Verifique os dias 02, 03, 04 de Setembro.");
 
         } catch (err) {
             console.error(err);
-            alert("Erro ao ler planilha: " + err.message);
+            alert("Erro ao processar: " + err.message);
         }
     };
     reader.readAsArrayBuffer(file);
 });
 
-// A BUSCA (Igual antes, mas garantindo o campo de texto)
+// A função de busca permanece a mesma (btnFiltrar)
 async function buscarResultados() {
     const dataAlvo = document.getElementById('filtroData').value;
     const grid = document.getElementById('gridResultados');
-    grid.innerHTML = "<div class='col-span-full text-center'>Buscando...</div>";
+    grid.innerHTML = "Buscando...";
 
-    try {
-        const docSnap = await getDoc(doc(db, "resultados_jb", dataAlvo));
-        if (docSnap.exists()) {
-            const d = docSnap.data();
-            const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
-            grid.innerHTML = horas.map(h => `
-                <div class="bg-white p-4 rounded-xl border-2 border-blue-50 shadow-md text-center">
-                    <span class="text-xs font-bold text-blue-500 uppercase">${h}</span>
-                    <p class="text-3xl font-black text-slate-800">${d[h] || '---'}</p>
-                </div>
-            `).join('');
-        } else {
-            grid.innerHTML = `<div class='col-span-full text-center p-8 bg-slate-100 rounded-xl'>Nenhum dado salvo para ${dataAlvo}. Tente importar a planilha de novo.</div>`;
-        }
-    } catch (e) {
-        grid.innerHTML = "Erro na conexão.";
+    const docSnap = await getDoc(doc(db, "resultados_jb", dataAlvo));
+    if (docSnap.exists()) {
+        const d = docSnap.data();
+        const horas = ["9hs", "11hs", "14hs", "16hs", "18hs", "21hs"];
+        grid.innerHTML = horas.map(h => `
+            <div class="bg-white p-4 rounded-xl border-2 border-blue-100 shadow-sm text-center">
+                <span class="text-xs font-bold text-blue-600 uppercase">${h}</span>
+                <p class="text-2xl font-black text-slate-800">${d[h] || '---'}</p>
+            </div>
+        `).join('');
+    } else {
+        grid.innerHTML = `<div class="col-span-full text-center p-4 bg-yellow-50 text-yellow-700 rounded-lg">Nenhum dado salvo para ${dataAlvo}.</div>`;
     }
 }
 document.getElementById('btnFiltrar').addEventListener('click', buscarResultados);
