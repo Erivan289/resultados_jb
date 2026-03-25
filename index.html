@@ -3,66 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Resultados - JB</title>
+    <title>Análise JB - Pro</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
-<body class="bg-slate-50 min-h-screen p-4 md:p-8">
+<body class="bg-slate-100 min-h-screen font-sans">
 
-    <div class="max-w-4xl mx-auto">
-        <header class="mb-10 text-center">
-            <h1 class="text-3xl font-black text-slate-800 uppercase tracking-tight">Sistema de Resultados</h1>
-            <p class="text-slate-500 font-medium">Gestão de Dados & Importação Excel</p>
+    <div class="max-w-2xl mx-auto p-6">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-black text-blue-700 tracking-tight">ANALISES_JB</h1>
+            <p class="text-slate-500 font-medium">Sincronização Automática via IA</p>
         </header>
 
-        <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm mb-8">
-            <h2 class="flex items-center gap-2 text-lg font-bold text-slate-700 mb-4">
-                📊 Importar Planilha (Desde 01/09/2024)
+        <div class="bg-white p-6 rounded-2xl shadow-xl border border-slate-200 mb-6">
+            <h2 class="text-lg font-bold text-slate-800 mb-4 flex items-center">
+                <span class="bg-green-100 text-green-600 p-2 rounded-lg mr-2">🔄</span>
+                Atualizar Banco de Dados
             </h2>
+            <p class="text-sm text-slate-600 mb-6">
+                Clique no botão abaixo para que a IA busque os resultados de hoje diretamente no site <strong>Resultado Fácil</strong>.
+            </p>
             
-            <div class="flex flex-col md:flex-row gap-4 items-end">
-                <div class="flex-1 w-full">
-                    <label class="block text-sm font-medium text-slate-500 mb-2">Selecione o arquivo .xlsx</label>
-                    <input type="file" id="inputExcel" accept=".xlsx, .xls" 
-                        class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" />
-                </div>
-                <button id="btnImportar" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl transition-all shadow-md shadow-blue-200">
-                    Processar e Salvar
-                </button>
-            </div>
-            <div id="status" class="mt-4 text-sm font-medium transition-all"></div>
-        </div>
-
-        <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                <input type="date" id="filtroData" value="2024-09-01"
-                    class="bg-slate-50 border border-slate-200 rounded-lg px-4 py-2 font-medium text-slate-700 outline-none focus:ring-2 focus:ring-blue-500" />
-                
-                <button id="btnFiltrar" class="w-full md:w-auto bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 px-6 rounded-lg transition-all">
-                    Ver Resultados
-                </button>
-            </div>
-
-            <div id="gridResultados" class="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div class="col-span-full text-center py-10 text-slate-400">
-                    Selecione uma data para ver os números.
-                </div>
-            </div>
-
-            <div id="container-analise" class="mt-8 bg-blue-50 p-6 rounded-2xl border border-blue-100 shadow-sm hidden">
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="text-2xl">💡</span>
-                    <h2 class="text-lg font-bold text-blue-800">Análise de Tendências (IA)</h2>
-                </div>
-                <div id="campo-analise" class="text-slate-700 leading-relaxed whitespace-pre-line">
-                    Aguardando análise...
-                </div>
+            <button id="btnSync" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2">
+                <span>🚀 Sincronizar Resultados de Hoje</span>
+            </button>
+            
+            <div id="status" class="mt-4 text-center text-sm font-bold text-slate-400">
+                Aguardando comando...
             </div>
         </div>
 
-        <footer class="mt-10 text-center text-slate-400 text-sm">
-            Desenvolvido para análise de resultados históricos.
+        <div class="bg-blue-600 p-6 rounded-2xl shadow-xl text-white mb-6">
+            <h2 class="text-lg font-bold mb-4">Consultar Histórico</h2>
+            <div class="flex flex-col sm:flex-row gap-3">
+                <input type="date" id="filtroData" class="flex-1 p-3 rounded-xl text-slate-800 focus:ring-4 focus:ring-blue-300 outline-none">
+                <button id="btnFiltrar" class="bg-slate-900 hover:bg-black px-6 py-3 rounded-xl font-bold transition-colors">
+                    🔍 Ver
+                </button>
+            </div>
+        </div>
+
+        <div id="gridResultados" class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div class="col-span-full text-center p-10 text-slate-400 italic">
+                Selecione uma data para ver os prêmios...
+            </div>
+        </div>
+
+        <footer class="mt-12 text-center text-slate-400 text-xs uppercase tracking-widest">
+            Desenvolvido com Gemini AI Studio & Firebase
         </footer>
+
     </div>
 
     <script type="module" src="script.js"></script>
